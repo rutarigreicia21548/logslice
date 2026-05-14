@@ -1,45 +1,48 @@
-"""Output writing utilities for logslice."""
+"""Write formatted log records to an output stream."""
 
+from __future__ import annotations
+
+import os
 import sys
-from typing import Iterable, Optional, TextIO
+from typing import Iterable, TextIO
+
 from logslice.parser import LogRecord
 from logslice.formatter import format_record
+
+
+def detect_color(stream: TextIO = sys.stdout) -> bool:
+    """Return True when color output is appropriate for *stream*.
+
+    Color is disabled when:
+    - the stream is not a TTY, or
+    - the ``NO_COLOR`` environment variable is set, or
+    - the ``TERM`` environment variable is ``'dumb'``.
+    """
+    if not hasattr(stream, "isatty") or not stream.isatty():
+        return False
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    return True
 
 
 def write_records(
     records: Iterable[LogRecord],
     fmt: str = "pretty",
-    color: bool = True,
-    out: Optional[TextIO] = None,
-    err: Optional[TextIO] = None,
-    max_records: Optional[int] = None,
+    color: bool | None = None,
+    stream: TextIO = sys.stdout,
 ) -> int:
-    """Write formatted log records to *out* (default stdout).
+    """Write each record in *records* to *stream*, returning the count written.
 
-    Returns the total number of records written.
+    If *color* is ``None`` the value is auto-detected from the stream.
     """
-    if out is None:
-        out = sys.stdout
-    if err is None:
-        err = sys.stderr
+    if color is None:
+        color = detect_color(stream)
 
     count = 0
-    try:
-        for record in records:
-            if max_records is not None and count >= max_records:
-                break
-            line = format_record(record, fmt=fmt, color=color)
-            out.write(line + "\n")
-            count += 1
-    except BrokenPipeError:
-        # Consumer closed the pipe (e.g. piped to `head`)
-        pass
-    except KeyboardInterrupt:
-        pass
+    for record in records:
+        line = format_record(record, fmt=fmt, color=color)
+        stream.write(line + "\n")
+        count += 1
     return count
-
-
-def detect_color(out: Optional[TextIO] = None) -> bool:
-    """Return True if the output stream supports ANSI color."""
-    stream = out or sys.stdout
-    return hasattr(stream, "isatty") and stream.isatty()
